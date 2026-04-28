@@ -143,6 +143,47 @@ router.post(
   })
 );
 
+router.put(
+  '/:id',
+  authMiddleware(['admin', 'staff']),
+  asyncHandler(async (req, res) => {
+    const rental = await Rental.findById(req.params.id);
+    if (!rental) throw new HttpError(404, 'rental not found');
+    if (rental.status === 'completed') {
+      throw new HttpError(409, 'completed rentals cannot be edited');
+    }
+
+    const { startDate, expectedReturnDate } = req.body || {};
+    const newStart = startDate ? new Date(startDate) : rental.startDate;
+    const newExpected = expectedReturnDate
+      ? new Date(expectedReturnDate)
+      : rental.expectedReturnDate;
+    if (newExpected <= newStart) {
+      throw new HttpError(400, 'expectedReturnDate must be after startDate');
+    }
+
+    const customer = await Customer.findById(rental.customerId);
+    if (!customer) throw new HttpError(404, 'customer not found');
+
+    const days = diffDays(newStart, newExpected);
+    const age = calculateAge(customer.dateOfBirth, newStart);
+    const dailyRate = rental.vehicleSnapshot.dailyRate;
+    const { baseCost, ageAdjustment, ageAdjustmentReason, totalCost } =
+      calculateRentalCost({ dailyRate, days, age });
+
+    rental.startDate = newStart;
+    rental.expectedReturnDate = newExpected;
+    rental.daysRented = days;
+    rental.baseCost = baseCost;
+    rental.ageAdjustment = ageAdjustment;
+    rental.ageAdjustmentReason = ageAdjustmentReason;
+    rental.totalCost = totalCost;
+    rental.customerSnapshot.age = age;
+    await rental.save();
+    res.json(rental);
+  })
+);
+
 router.post(
   '/:id/return',
   authMiddleware(['admin', 'staff']),

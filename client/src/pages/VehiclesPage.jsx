@@ -19,9 +19,13 @@ export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState([]);
   const [filter, setFilter] = useState('all');
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('create');
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(empty);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const canManage = user?.role === 'admin' || user?.role === 'staff';
 
   async function load() {
     setLoading(true);
@@ -44,16 +48,45 @@ export default function VehiclesPage() {
     load();
   }, [filter]);
 
-  async function handleAdd(e) {
+  function openCreate() {
+    setMode('create');
+    setEditId(null);
+    setForm(empty);
+    setError('');
+    setOpen(true);
+  }
+
+  function openEdit(v) {
+    setMode('edit');
+    setEditId(v.id);
+    setForm({
+      type: v.type,
+      make: v.make,
+      model: v.model,
+      registrationNumber: v.registrationNumber,
+      year: v.year || new Date().getFullYear(),
+      dailyRate: v.dailyRate,
+      seats: v.seats,
+      notes: v.notes || '',
+    });
+    setError('');
+    setOpen(true);
+  }
+
+  async function handleSave(e) {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/vehicles', form);
+      if (mode === 'create') {
+        await api.post('/vehicles', form);
+      } else {
+        const { type, registrationNumber, ...updatable } = form;
+        await api.put(`/vehicles/${editId}`, updatable);
+      }
       setOpen(false);
-      setForm(empty);
       load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add vehicle');
+      setError(err.response?.data?.error || 'Failed to save vehicle');
     }
   }
 
@@ -74,12 +107,14 @@ export default function VehiclesPage() {
           <h1 className="text-2xl font-bold text-slate-900">Vehicles</h1>
           <p className="text-sm text-slate-500">Cars and vans in the fleet.</p>
         </div>
-        <button onClick={() => setOpen(true)} className="btn-primary">
-          + Add vehicle
-        </button>
+        {canManage && (
+          <button onClick={openCreate} className="btn-primary">
+            + Add vehicle
+          </button>
+        )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {[
           ['all', 'All'],
           ['cars', 'Cars'],
@@ -156,16 +191,26 @@ export default function VehiclesPage() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {user?.role === 'admin' && (
-                    <button
-                      onClick={() => handleDelete(v)}
-                      disabled={v.isOnRent}
-                      className="btn-secondary text-rose-700 hover:bg-rose-50"
-                      title={v.isOnRent ? 'Vehicle is on rent' : 'Delete vehicle'}
-                    >
-                      Delete
-                    </button>
-                  )}
+                  <div className="inline-flex gap-2">
+                    {canManage && (
+                      <button
+                        onClick={() => openEdit(v)}
+                        className="btn-secondary"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {user?.role === 'admin' && (
+                      <button
+                        onClick={() => handleDelete(v)}
+                        disabled={v.isOnRent}
+                        className="btn-secondary text-rose-700 hover:bg-rose-50"
+                        title={v.isOnRent ? 'Vehicle is on rent' : 'Delete vehicle'}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -176,19 +221,19 @@ export default function VehiclesPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Add vehicle"
+        title={mode === 'create' ? 'Add vehicle' : 'Edit vehicle'}
         footer={
           <>
             <button onClick={() => setOpen(false)} className="btn-secondary">
               Cancel
             </button>
             <button form="vehicle-form" type="submit" className="btn-primary">
-              Save
+              {mode === 'create' ? 'Create' : 'Save changes'}
             </button>
           </>
         }
       >
-        <form id="vehicle-form" onSubmit={handleAdd} className="space-y-3">
+        <form id="vehicle-form" onSubmit={handleSave} className="space-y-3">
           {error && (
             <div className="rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
               {error}
@@ -201,10 +246,14 @@ export default function VehiclesPage() {
                 className="input"
                 value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value })}
+                disabled={mode === 'edit'}
               >
                 <option value="car">Car</option>
                 <option value="van">Van</option>
               </select>
+              {mode === 'edit' && (
+                <p className="text-xs text-slate-500 mt-1">Type cannot be changed.</p>
+              )}
             </div>
             <div>
               <label className="label">Registration #</label>
@@ -214,8 +263,12 @@ export default function VehiclesPage() {
                 onChange={(e) =>
                   setForm({ ...form, registrationNumber: e.target.value })
                 }
+                disabled={mode === 'edit'}
                 required
               />
+              {mode === 'edit' && (
+                <p className="text-xs text-slate-500 mt-1">Registration cannot be changed.</p>
+              )}
             </div>
             <div>
               <label className="label">Make</label>

@@ -19,13 +19,24 @@ function ageBadge(age) {
   return <span className="badge bg-slate-100 text-slate-700">Standard</span>;
 }
 
+function toDateInput(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
 export default function CustomersPage() {
   const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('create');
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(empty);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const canManage = user?.role === 'admin' || user?.role === 'staff';
 
   async function load() {
     setLoading(true);
@@ -43,16 +54,42 @@ export default function CustomersPage() {
     load();
   }, []);
 
-  async function handleAdd(e) {
+  function openCreate() {
+    setMode('create');
+    setEditId(null);
+    setForm(empty);
+    setError('');
+    setOpen(true);
+  }
+
+  function openEdit(c) {
+    setMode('edit');
+    setEditId(c.id);
+    setForm({
+      name: c.name || '',
+      address: c.address || '',
+      email: c.email || '',
+      phone: c.phone || '',
+      dateOfBirth: toDateInput(c.dateOfBirth),
+      licenseNumber: c.licenseNumber || '',
+    });
+    setError('');
+    setOpen(true);
+  }
+
+  async function handleSave(e) {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/customers', form);
+      if (mode === 'create') {
+        await api.post('/customers', form);
+      } else {
+        await api.put(`/customers/${editId}`, form);
+      }
       setOpen(false);
-      setForm(empty);
       load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add customer');
+      setError(err.response?.data?.error || 'Failed to save customer');
     }
   }
 
@@ -75,9 +112,11 @@ export default function CustomersPage() {
             {customers.length} registered customer{customers.length === 1 ? '' : 's'}
           </p>
         </div>
-        <button onClick={() => setOpen(true)} className="btn-primary">
-          + Add customer
-        </button>
+        {canManage && (
+          <button onClick={openCreate} className="btn-primary">
+            + Add customer
+          </button>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -123,14 +162,21 @@ export default function CustomersPage() {
                 <td className="px-4 py-3">{c.age ?? '—'}</td>
                 <td className="px-4 py-3">{ageBadge(c.age)}</td>
                 <td className="px-4 py-3 text-right">
-                  {user?.role === 'admin' && (
-                    <button
-                      onClick={() => handleDelete(c)}
-                      className="btn-secondary text-rose-700 hover:bg-rose-50"
-                    >
-                      Delete
-                    </button>
-                  )}
+                  <div className="inline-flex gap-2">
+                    {canManage && (
+                      <button onClick={() => openEdit(c)} className="btn-secondary">
+                        Edit
+                      </button>
+                    )}
+                    {user?.role === 'admin' && (
+                      <button
+                        onClick={() => handleDelete(c)}
+                        className="btn-secondary text-rose-700 hover:bg-rose-50"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -141,19 +187,19 @@ export default function CustomersPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Add customer"
+        title={mode === 'create' ? 'Add customer' : 'Edit customer'}
         footer={
           <>
             <button onClick={() => setOpen(false)} className="btn-secondary">
               Cancel
             </button>
             <button form="customer-form" type="submit" className="btn-primary">
-              Save
+              {mode === 'create' ? 'Create' : 'Save changes'}
             </button>
           </>
         }
       >
-        <form id="customer-form" onSubmit={handleAdd} className="space-y-3">
+        <form id="customer-form" onSubmit={handleSave} className="space-y-3">
           {error && (
             <div className="rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
               {error}
@@ -214,6 +260,11 @@ export default function CustomersPage() {
               />
             </div>
           </div>
+          {mode === 'edit' && (
+            <p className="text-xs text-slate-500">
+              Changing the date of birth will affect pricing on future rentals (under-25 surcharge / over-50 discount).
+            </p>
+          )}
         </form>
       </Modal>
     </div>

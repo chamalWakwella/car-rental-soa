@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import Modal from '../components/Modal.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString();
+}
+
+function toDateInput(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
 }
 
 function defaultReturnDate() {
@@ -14,17 +22,24 @@ function defaultReturnDate() {
 }
 
 export default function RentalsPage() {
+  const { user } = useAuth();
+  const canManage = user?.role === 'admin' || user?.role === 'staff';
+
   const [rentals, setRentals] = useState([]);
   const [statusFilter, setStatusFilter] = useState('active');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('create');
+  const [editRental, setEditRental] = useState(null);
+
   const [customers, setCustomers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [form, setForm] = useState({
     customerId: '',
     vehicleId: '',
+    startDate: '',
     expectedReturnDate: defaultReturnDate(),
   });
   const [quote, setQuote] = useState(null);
@@ -51,6 +66,8 @@ export default function RentalsPage() {
     setError('');
     setQuote(null);
     setQuoteError('');
+    setMode('create');
+    setEditRental(null);
     try {
       const [c, v] = await Promise.all([
         api.get('/customers'),
@@ -61,11 +78,42 @@ export default function RentalsPage() {
       setForm({
         customerId: c.data[0]?.id || '',
         vehicleId: v.data[0]?.id || '',
+        startDate: '',
         expectedReturnDate: defaultReturnDate(),
       });
       setOpen(true);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to open rental form');
+    }
+  }
+
+  async function openEdit(rental) {
+    setError('');
+    setQuote(null);
+    setQuoteError('');
+    setMode('edit');
+    setEditRental(rental);
+    try {
+      const c = await api.get('/customers');
+      setCustomers(c.data);
+      setVehicles([
+        {
+          id: rental.vehicleId,
+          registrationNumber: rental.vehicleSnapshot.registrationNumber,
+          make: rental.vehicleSnapshot.make,
+          model: rental.vehicleSnapshot.model,
+          dailyRate: rental.vehicleSnapshot.dailyRate,
+        },
+      ]);
+      setForm({
+        customerId: rental.customerId,
+        vehicleId: rental.vehicleId,
+        startDate: toDateInput(rental.startDate),
+        expectedReturnDate: toDateInput(rental.expectedReturnDate),
+      });
+      setOpen(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to open edit form');
     }
   }
 
@@ -76,7 +124,9 @@ export default function RentalsPage() {
       return;
     }
     try {
-      const r = await api.post('/rentals/quote', next);
+      const payload = { ...next };
+      if (!payload.startDate) delete payload.startDate;
+      const r = await api.post('/rentals/quote', payload);
       setQuote(r.data);
     } catch (err) {
       setQuote(null);
@@ -86,17 +136,26 @@ export default function RentalsPage() {
 
   useEffect(() => {
     if (open) refreshQuote(form);
-  }, [open, form.customerId, form.vehicleId, form.expectedReturnDate]);
+  }, [open, form.customerId, form.vehicleId, form.expectedReturnDate, form.startDate]);
 
-  async function handleCreate(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/rentals', form);
+      if (mode === 'create') {
+        const payload = { ...form };
+        if (!payload.startDate) delete payload.startDate;
+        await api.post('/rentals', payload);
+      } else {
+        await api.put(`/rentals/${editRental.id}`, {
+          startDate: form.startDate || undefined,
+          expectedReturnDate: form.expectedReturnDate,
+        });
+      }
       setOpen(false);
       load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create rental');
+      setError(err.response?.data?.error || 'Failed to save rental');
     }
   }
 
@@ -124,9 +183,11 @@ export default function RentalsPage() {
             Active and historical rental agreements.
           </p>
         </div>
-        <button onClick={openCreate} className="btn-primary">
-          + New rental
-        </button>
+        {canManage && (
+          <button onClick={openCreate} className="btn-primary">
+            + New rental
+          </button>
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -232,11 +293,18 @@ export default function RentalsPage() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {r.status === 'active' && (
-                    <button onClick={() => handleReturn(r)} className="btn-success">
-                      Return
-                    </button>
-                  )}
+                  <div className="inline-flex gap-2">
+                    {canManage && r.status === 'active' && (
+                      <button onClick={() => openEdit(r)} className="btn-secondary">
+                        Edit
+                      </button>
+                    )}
+                    {canManage && r.status === 'active' && (
+                      <button onClick={() => handleReturn(r)} className="btn-success">
+                        Return
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -247,19 +315,19 @@ export default function RentalsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="New rental"
+        title={mode === 'create' ? 'New rental' : 'Edit rental'}
         footer={
           <>
             <button onClick={() => setOpen(false)} className="btn-secondary">
               Cancel
             </button>
             <button form="rental-form" type="submit" className="btn-primary">
-              Confirm rental
+              {mode === 'create' ? 'Confirm rental' : 'Save changes'}
             </button>
           </>
         }
       >
-        <form id="rental-form" onSubmit={handleCreate} className="space-y-3">
+        <form id="rental-form" onSubmit={handleSubmit} className="space-y-3">
           {error && (
             <div className="rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
               {error}
@@ -272,14 +340,19 @@ export default function RentalsPage() {
               value={form.customerId}
               onChange={(e) => setForm({ ...form, customerId: e.target.value })}
               required
+              disabled={mode === 'edit'}
             >
               <option value="">Select customer…</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} (age {c.age})
+                  {c.name}
+                  {c.age != null ? ` (age ${c.age})` : ''}
                 </option>
               ))}
             </select>
+            {mode === 'edit' && (
+              <p className="text-xs text-slate-500 mt-1">Customer cannot be changed.</p>
+            )}
           </div>
           <div>
             <label className="label">Vehicle</label>
@@ -288,6 +361,7 @@ export default function RentalsPage() {
               value={form.vehicleId}
               onChange={(e) => setForm({ ...form, vehicleId: e.target.value })}
               required
+              disabled={mode === 'edit'}
             >
               <option value="">Select vehicle…</option>
               {vehicles.map((v) => (
@@ -296,26 +370,43 @@ export default function RentalsPage() {
                 </option>
               ))}
             </select>
-            {vehicles.length === 0 && (
+            {mode === 'edit' && (
+              <p className="text-xs text-slate-500 mt-1">Vehicle cannot be changed.</p>
+            )}
+            {mode === 'create' && vehicles.length === 0 && (
               <div className="mt-1 text-xs text-rose-600">
                 No vehicles are currently available.
               </div>
             )}
           </div>
-          <div>
-            <label className="label">Expected return date</label>
-            <input
-              type="date"
-              className="input"
-              value={form.expectedReturnDate}
-              onChange={(e) => setForm({ ...form, expectedReturnDate: e.target.value })}
-              required
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Start date</label>
+              <input
+                type="date"
+                className="input"
+                value={form.startDate}
+                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              />
+              {mode === 'create' && (
+                <p className="text-xs text-slate-500 mt-1">Defaults to today.</p>
+              )}
+            </div>
+            <div>
+              <label className="label">Expected return date</label>
+              <input
+                type="date"
+                className="input"
+                value={form.expectedReturnDate}
+                onChange={(e) => setForm({ ...form, expectedReturnDate: e.target.value })}
+                required
+              />
+            </div>
           </div>
 
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
-              Quote (live from customer service)
+              {mode === 'edit' ? 'Recalculated pricing' : 'Quote (live from customer service)'}
             </div>
             {quoteError && (
               <div className="text-sm text-rose-700">{quoteError}</div>
