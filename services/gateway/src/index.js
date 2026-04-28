@@ -25,26 +25,26 @@ app.get('/health', (_req, res) =>
   })
 );
 
-const proxyOptions = (target) => ({
-  target,
-  changeOrigin: true,
-  pathRewrite: (path) => path.replace(/^\/api/, ''),
-  on: {
-    error: (err, _req, res) => {
-      console.error('[gateway] proxy error', err.message);
-      if (!res.headersSent) {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-      }
-      res.end(JSON.stringify({ error: 'upstream service unavailable' }));
+const proxy = (target, servicePrefix) =>
+  createProxyMiddleware({
+    target,
+    changeOrigin: true,
+    pathRewrite: (path) => servicePrefix + path,
+    on: {
+      error: (err, _req, res) => {
+        console.error('[gateway] proxy error', err.message);
+        if (res && !res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'upstream service unavailable' }));
+        }
+      },
     },
-  },
-});
+  });
 
-app.use('/api/auth', createProxyMiddleware(proxyOptions(AUTH_URL)));
-
-app.use('/api/vehicles', authMiddleware(), createProxyMiddleware(proxyOptions(VEHICLE_URL)));
-app.use('/api/customers', authMiddleware(), createProxyMiddleware(proxyOptions(CUSTOMER_URL)));
-app.use('/api/rentals', authMiddleware(), createProxyMiddleware(proxyOptions(CUSTOMER_URL)));
+app.use('/api/auth', proxy(AUTH_URL, '/auth'));
+app.use('/api/vehicles', authMiddleware(), proxy(VEHICLE_URL, '/vehicles'));
+app.use('/api/customers', authMiddleware(), proxy(CUSTOMER_URL, '/customers'));
+app.use('/api/rentals', authMiddleware(), proxy(CUSTOMER_URL, '/rentals'));
 
 app.use(errorHandler);
 
