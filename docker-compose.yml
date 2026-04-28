@@ -1,0 +1,98 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: car-rental-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build:
+      context: ./services
+      dockerfile: auth-service/Dockerfile
+    container_name: car-rental-auth
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      MONGO_URI: mongodb://mongo:27017/car_rental_auth
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "4001:4001"
+
+  vehicle-service:
+    build:
+      context: ./services
+      dockerfile: vehicle-service/Dockerfile
+    container_name: car-rental-vehicle
+    restart: unless-stopped
+    environment:
+      PORT: 4002
+      MONGO_URI: mongodb://mongo:27017/car_rental_vehicles
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "4002:4002"
+
+  customer-service:
+    build:
+      context: ./services
+      dockerfile: customer-service/Dockerfile
+    container_name: car-rental-customer
+    restart: unless-stopped
+    environment:
+      PORT: 4003
+      MONGO_URI: mongodb://mongo:27017/car_rental_customers
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      VEHICLE_SERVICE_URL: http://vehicle-service:4002
+    depends_on:
+      mongo:
+        condition: service_healthy
+      vehicle-service:
+        condition: service_started
+    ports:
+      - "4003:4003"
+
+  gateway:
+    build:
+      context: ./services
+      dockerfile: gateway/Dockerfile
+    container_name: car-rental-gateway
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      AUTH_SERVICE_URL: http://auth-service:4001
+      VEHICLE_SERVICE_URL: http://vehicle-service:4002
+      CUSTOMER_SERVICE_URL: http://customer-service:4003
+    depends_on:
+      - auth-service
+      - vehicle-service
+      - customer-service
+    ports:
+      - "4000:4000"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: car-rental-client
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    ports:
+      - "3000:80"
+
+volumes:
+  mongo_data:

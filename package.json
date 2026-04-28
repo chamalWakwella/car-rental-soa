@@ -1,0 +1,14 @@
+{
+  "name": "car-rental-soa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Service-oriented architecture demo for a car rental application (Node + React + MongoDB).",
+  "scripts": {
+    "up": "docker compose up --build -d",
+    "down": "docker compose down",
+    "logs": "docker compose logs -f",
+    "seed": "bash scripts/seed.sh",
+    "seed:win": "powershell -File scripts/seed.ps1"
+  },
+  "license": "MIT"
+}
