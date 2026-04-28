@@ -85,22 +85,6 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="card p-6">
-        <h2 className="font-semibold text-slate-900 mb-2">Architecture</h2>
-        <p className="text-sm text-slate-600">
-          The browser communicates with a single API gateway. The gateway authenticates
-          requests using JWT and forwards them to the auth, vehicle, or customer
-          microservice. Each service owns its own MongoDB database and exposes a REST API.
-          Services collaborate over HTTP — for example, creating a rental causes the
-          customer service to mark the chosen vehicle as on-rent in the vehicle service.
-        </p>
-        <ul className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-700">
-          <li>• <span className="font-medium">Auth service</span> issues JWT tokens</li>
-          <li>• <span className="font-medium">Vehicle service</span> manages cars and vans</li>
-          <li>• <span className="font-medium">Customer service</span> manages customers + rentals (pricing engine)</li>
-          <li>• <span className="font-medium">API gateway</span> routes traffic and validates tokens</li>
-        </ul>
-      </div>
     </div>
   );
 }

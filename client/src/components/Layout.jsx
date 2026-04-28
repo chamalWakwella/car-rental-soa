@@ -63,7 +63,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <footer className="text-center text-xs text-slate-400 py-4">
-        Microservices: Auth · Vehicle · Customer/Rental · Gateway
+        copyright 2026 Chamal Wakwella
       </footer>
     </div>
   );
